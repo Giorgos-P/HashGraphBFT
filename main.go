@@ -4,13 +4,11 @@ import (
 	"HashGraphBFT/app"
 	"HashGraphBFT/config"
 	"HashGraphBFT/logger"
-	"HashGraphBFT/types"
+	"HashGraphBFT/threshenc"
 
 	//	"HashGraphBFT/types"
 
 	"HashGraphBFT/variables"
-
-	"fmt"
 
 	"log"
 	"os"
@@ -33,19 +31,13 @@ func initializer(id int, n int, t int, clients int, scenario config.Scenario) {
 		"| T:", variables.T,
 		"| Clients:", variables.Clients,
 	)
+	threshenc.ReadKeys("./keys/")
 
 	app.InitializeMessenger()
-	// app.InitializeReplication()
-
-	// Initialize the message transmition and handling for the servers
-	app.Subscribe()
-	go app.TransmitMessages()
-	// go app.ByzantineReplication()
 
 	terminate := make(chan os.Signal, 1)
 	signal.Notify(terminate, os.Interrupt)
 	go func() {
-
 		for range terminate {
 			for i := 0; i < n; i++ {
 				if i == id {
@@ -73,28 +65,42 @@ func main() {
 	clients, _ := strconv.Atoi(args[3])
 	tmp, _ := strconv.Atoi(args[4])
 	scenario := config.Scenario(tmp)
-
 	initializer(id, n, t, clients, scenario)
+
+	// if id == 0 {
+	// 	//threshenc.GenerateKeys(n, "./keys/")
+	// 	eventMessage := new(types.EventMessage)
+	// 	eventMessage.Signature = []byte("abc")
+	// 	eventMessage.Timestamp = time.Now().UnixNano()
+	// 	eventMessage.Transaction = "0"
+	// 	eventMessage.PreviousHash = "0"
+	// 	eventMessage.ParentHash = "0"
+	// 	eventMessage.Owner = 0
+
+	// 	fmt.Println("------------------------------")
+	// 	fmt.Println(*eventMessage)
+	// 	fmt.Println("------------------------------")
+
+	// 	app.CreateSignature(eventMessage)
+	// 	fmt.Println(*eventMessage)
+	// 	fmt.Println("------------------------------")
+
+	// 	verif := app.VerifySignature(eventMessage)
+	// 	fmt.Println(verif)
+	// 	fmt.Println("------------------------------")
+
+	// 	fmt.Println(eventMessage)
+	// 	fmt.Println("------------------------------")
+
+	// } else {
+	// 	return
+	// }
+
+	// Initialize the message transmition and handling for the servers
 	app.Subscribe()
 	go app.TransmitMessages()
 
-	//	fmt.Println(config.GetServerAddressLocal(id))
-	//	fmt.Println(config.GetServerAddressLocal(id))
-
-	s := "abcd"
-
-	//message := new(types.Message)
-
-	//	message := types.NewMessage([]byte(s), "ReplicaStructure")
-	message := types.NewMessage([]byte(s), "a")
-
-	fmt.Println(message)
-
-	if id == 2 {
-		message.Type = "b"
-		message.Hash = 200
-		app.SendMessage(message, 1)
-	}
+	go app.InitGraph()
 
 	_ = <-done
 }

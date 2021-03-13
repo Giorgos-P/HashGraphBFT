@@ -14,12 +14,15 @@ var (
 
 	// ErrLogger - Log the errors
 	ErrLogger *log.Logger
+
+	HashGraphLogger *log.Logger
 )
 
 // InitializeLogger - Initializes the Out and Err loggers
 func InitializeLogger() {
-	outFolder := "/home/giorgos/logs/" // vasilis changes depending on the PC
+	outFolder := "/home/giorgos/logs/" // changes depending on the PC
 	errFolder := "/home/giorgos/logs/"
+
 	// switch config.TestCase {
 	// case config.NORMAL:
 	// 	outFolder += "normal/out/"
@@ -49,12 +52,18 @@ func InitializeLogger() {
 		time.Now().Format("01-02-2006 15:04:05") + ".txt"
 	errorFilePath := errFolder + "error_" + strconv.Itoa(variables.ID) + "_" +
 		time.Now().Format("01-02-2006 15:04:05") + ".txt"
+	graphFilePath := outFolder + "graph_" + strconv.Itoa(variables.ID) + "_" + ".txt"
 
 	outFile, err := os.OpenFile(outputFilePath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		log.Fatal(err)
 	}
 	errFile, err := os.OpenFile(errorFilePath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	graphFile, err := os.OpenFile(graphFilePath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -68,4 +77,9 @@ func InitializeLogger() {
 		errFile,
 		"ERROR:\t",
 		log.LstdFlags|log.Lmicroseconds|log.Lshortfile)
+
+	HashGraphLogger = log.New(
+		graphFile,
+		"INFO:\t", 0)
+	//logger.HashGraphLogger.Println(count)
 }

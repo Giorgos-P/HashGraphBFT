@@ -7,7 +7,6 @@ import (
 	"HashGraphBFT/variables"
 	"bytes"
 	"encoding/gob"
-	"fmt"
 
 	"github.com/pebbe/zmq4"
 )
@@ -40,6 +39,12 @@ var (
 	// ReplicaChannel - Channel to put the replicas messages in
 	ReplicaChannel = make(chan struct {
 		Rep  *types.ReplicaStructure
+		From int
+	}, 100)
+
+	// EventChannel - Channel to put the received event messages(gossip) in
+	EventChannel = make(chan struct {
+		Ev   *types.EventMessage
 		From int
 	}, 100)
 
@@ -161,17 +166,34 @@ func SendReplica(replica *types.ReplicaStructure, to int) {
 	SendMessage(message, to)
 }
 
+// SendEvent -
+func SendEvent(event *types.EventMessage, to int) {
+	w := new(bytes.Buffer)
+	encoder := gob.NewEncoder(w)
+	err := encoder.Encode(event)
+	if err != nil {
+		logger.ErrLogger.Fatal(err)
+	}
+	message := types.NewMessage(w.Bytes(), "Event")
+
+	SendMessage(message, to)
+}
+
 // SendMessage - Puts the messages in the message channel to be transmitted with TransmitMessages
 func SendMessage(message types.Message, to int) {
+
 	MessageChannel <- struct {
 		Message types.Message
 		To      int
 	}{Message: message, To: to}
+
 }
 
 // TransmitMessages - Transmites the messages to the other servers [go started from main]
 func TransmitMessages() {
+
 	for messageTo := range MessageChannel {
+
 		to := messageTo.To
 		message := messageTo.Message
 		w := new(bytes.Buffer)
@@ -182,8 +204,11 @@ func TransmitMessages() {
 		}
 
 		_, err = SendSockets[to].SendBytes(w.Bytes(), 0)
-		if err != nil {
-			logger.ErrLogger.Fatal(err)
+
+		for err != nil {
+			_, err = SendSockets[to].SendBytes(w.Bytes(), 0)
+
+			//logger.ErrLogger.Fatal(err)
 		}
 		logger.OutLogger.Println("SENT Message to", to)
 
@@ -192,7 +217,9 @@ func TransmitMessages() {
 			logger.ErrLogger.Fatal(err)
 		}
 		logger.OutLogger.Println("OKAY from", to)
+		//time.Sleep(time.Second * 1)
 	}
+
 }
 
 // Subscribe - Handles the inputs from both clients and other servers
@@ -226,8 +253,10 @@ func Subscribe() {
 		go func(i int) { // Initializes them with a goroutine and waits forever
 			for {
 				message, err := ReceiveSockets[i].RecvBytes(0)
-				if err != nil {
-					logger.ErrLogger.Fatal(err)
+				for err != nil {
+					message, err = ReceiveSockets[i].RecvBytes(0)
+
+					//logger.ErrLogger.Fatal(err)
 				}
 
 				// i = who sent as the message
@@ -264,14 +293,6 @@ func handleMessage(msg []byte) {
 	decoder := gob.NewDecoder(buffer)
 	err := decoder.Decode(&message)
 
-	//giorgos insert it
-	fmt.Println(string(msg))
-	fmt.Println(message)
-	fmt.Println(message.Hash)
-
-	// fmt.Println(decoder)
-	// fmt.Println((err))
-
 	if err != nil {
 		logger.ErrLogger.Fatal(err)
 	}
@@ -289,6 +310,22 @@ func handleMessage(msg []byte) {
 			Rep  *types.ReplicaStructure
 			From int
 		}{Rep: replica, From: message.From}
+	case "Event":
+		replica := new(types.EventMessage)
+		buf := bytes.NewBuffer(message.Payload)
+		dec := gob.NewDecoder(buf)
+		err = dec.Decode(&replica)
+		if err != nil {
+			logger.ErrLogger.Fatal(err)
+		}
+
+		MuChannel.Lock()
+		EventChannel <- struct {
+			Ev   *types.EventMessage
+			From int
+		}{Ev: replica, From: message.From}
+		MuChannel.Unlock()
+
 	}
 }
 
