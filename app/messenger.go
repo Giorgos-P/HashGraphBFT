@@ -31,22 +31,13 @@ var (
 	MessageChannel = make(chan struct {
 		Message types.Message
 		To      int
-	})
-
-	// RequestChannel - Channel to put the client requests in
-	RequestChannel = make(chan *types.ClientMessage, 100)
-
-	// ReplicaChannel - Channel to put the replicas messages in
-	ReplicaChannel = make(chan struct {
-		Rep  *types.ReplicaStructure
-		From int
-	}, 100)
+	}, 10000)
 
 	// EventChannel - Channel to put the received event messages(gossip) in
 	EventChannel = make(chan struct {
 		Ev   *types.EventMessage
 		From int
-	}, 100)
+	}, 10000)
 
 	count = 0
 )
@@ -75,8 +66,9 @@ func InitializeMessenger() {
 			serverAddr = config.GetServerAddress(i)
 		}
 		err = ServerSockets[i].Bind(serverAddr)
-		if err != nil {
-			logger.ErrLogger.Fatal(err)
+		for err != nil {
+			//logger.ErrLogger.Fatal(err)
+			err = ServerSockets[i].Bind(serverAddr)
 		}
 		logger.OutLogger.Println("Requests from Client", i, "on", serverAddr)
 
@@ -154,17 +146,17 @@ func Broadcast(message types.Message) {
 	}
 }
 
-// SendReplica - (I think) Creates the replicas
-func SendReplica(replica *types.ReplicaStructure, to int) {
-	w := new(bytes.Buffer)
-	encoder := gob.NewEncoder(w)
-	err := encoder.Encode(replica)
-	if err != nil {
-		logger.ErrLogger.Fatal(err)
-	}
-	message := types.NewMessage(w.Bytes(), "ReplicaStructure")
-	SendMessage(message, to)
-}
+// func SendMessageClient(event *types.ClientMsg, to int) {
+// 	w := new(bytes.Buffer)
+// 	encoder := gob.NewEncoder(w)
+// 	err := encoder.Encode(event)
+// 	if err != nil {
+// 		logger.ErrLogger.Fatal(err)
+// 	}
+// 	message := types.NewMessage(w.Bytes(), "ClientMessage")
+
+// 	SendMessage(message, to)
+// }
 
 // SendEvent -
 func SendEvent(event *types.EventMessage, to int) {
@@ -224,6 +216,7 @@ func TransmitMessages() {
 
 // Subscribe - Handles the inputs from both clients and other servers
 func Subscribe() {
+	//fmt.Println("Clients:", variables.Clients)
 	// Gets requests from clients and handles them
 	for i := 0; i < variables.Clients; i++ {
 		go func(i int) { // Initialize them with a goroutine and waits forever
@@ -234,7 +227,7 @@ func Subscribe() {
 				}
 				logger.OutLogger.Println("Request Received")
 
-				handleRequest(message)
+				go handleClientRequest(message, i)
 
 				_, err = ServerSockets[i].Send("", 0)
 				if err != nil {
@@ -253,10 +246,10 @@ func Subscribe() {
 		go func(i int) { // Initializes them with a goroutine and waits forever
 			for {
 				message, err := ReceiveSockets[i].RecvBytes(0)
-				for err != nil {
-					message, err = ReceiveSockets[i].RecvBytes(0)
-
-					//logger.ErrLogger.Fatal(err)
+				//for err != nil {
+				//	message, err = ReceiveSockets[i].RecvBytes(0)
+				if err != nil {
+					logger.ErrLogger.Fatal(err)
 				}
 
 				// i = who sent as the message
@@ -272,15 +265,24 @@ func Subscribe() {
 }
 
 // Put client's message in RequestChannel
-func handleRequest(msg []byte) {
-	message := new(types.ClientMessage)
-	buffer := bytes.NewBuffer(msg)
+func handleClientRequest(msg []byte, from int) {
+	logger.OutLogger.Println("RECEIVED REQ from", from)
+
+	message := new(types.ClientMsg)
+	buffer := bytes.NewBuffer([]byte(msg))
 	decoder := gob.NewDecoder(buffer)
 	err := decoder.Decode(&message)
+
 	if err != nil {
 		logger.ErrLogger.Fatal(err)
 	}
-	RequestChannel <- message
+
+	ClientChannel <- struct {
+		clientTransaction string
+		transactionNumber int
+		clientID          int
+	}{clientTransaction: message.ClientTransaction, transactionNumber: message.TransactionNumber, clientID: from}
+
 }
 
 // Handles the messages from the other servers (i think only ReplicaStructure concern us)
@@ -298,18 +300,18 @@ func handleMessage(msg []byte) {
 	}
 
 	switch message.Type {
-	case "ReplicaStructure":
-		replica := new(types.ReplicaStructure)
-		buf := bytes.NewBuffer(message.Payload)
-		dec := gob.NewDecoder(buf)
-		err = dec.Decode(&replica)
-		if err != nil {
-			logger.ErrLogger.Fatal(err)
-		}
-		ReplicaChannel <- struct {
-			Rep  *types.ReplicaStructure
-			From int
-		}{Rep: replica, From: message.From}
+	// case "ReplicaStructure":
+	// 	replica := new(types.ReplicaStructure)
+	// 	buf := bytes.NewBuffer(message.Payload)
+	// 	dec := gob.NewDecoder(buf)
+	// 	err = dec.Decode(&replica)
+	// 	if err != nil {
+	// 		logger.ErrLogger.Fatal(err)
+	// 	}
+	// 	ReplicaChannel <- struct {
+	// 		Rep  *types.ReplicaStructure
+	// 		From int
+	// 	}{Rep: replica, From: message.From}
 	case "Event":
 		replica := new(types.EventMessage)
 		buf := bytes.NewBuffer(message.Payload)
@@ -319,18 +321,15 @@ func handleMessage(msg []byte) {
 			logger.ErrLogger.Fatal(err)
 		}
 
-		MuChannel.Lock()
 		EventChannel <- struct {
 			Ev   *types.EventMessage
 			From int
 		}{Ev: replica, From: message.From}
-		MuChannel.Unlock()
-
 	}
 }
 
 // ReplyClient - Sends back a response to the client
-func ReplyClient(reply *types.Reply) {
+func ReplyClient(reply types.Reply, to int) {
 	w := new(bytes.Buffer)
 	encoder := gob.NewEncoder(w)
 	err := encoder.Encode(reply)
@@ -338,19 +337,9 @@ func ReplyClient(reply *types.Reply) {
 		logger.ErrLogger.Fatal(err)
 	}
 
-	message := types.NewMessage(w.Bytes(), "Reply")
-	buf := new(bytes.Buffer)
-	enc := gob.NewEncoder(buf)
-	err = enc.Encode(message)
-	if err != nil {
-		logger.ErrLogger.Fatal(err)
-	}
-	logger.OutLogger.Printf("%s\n", string(reply.Result))
-
-	to := reply.Client
 	_, err = ResponseSockets[to].SendBytes(w.Bytes(), 0)
 	if err != nil {
 		logger.ErrLogger.Fatal(err)
 	}
-	logger.OutLogger.Println("Replied to Client", to)
+	logger.OutLogger.Println("REPLIED Client", to, "-", reply.Value)
 }

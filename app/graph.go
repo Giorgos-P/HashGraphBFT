@@ -1,16 +1,12 @@
 package app
 
 import (
+	"HashGraphBFT/config"
 	"HashGraphBFT/logger"
 	"HashGraphBFT/threshenc"
 	"HashGraphBFT/types"
 	"HashGraphBFT/variables"
-
-	"errors"
-	"fmt"
 	"math/rand"
-	"os"
-	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -23,38 +19,55 @@ type History struct {
 
 // EventNode -
 type EventNode struct {
-	EventMessage      *types.EventMessage
-	PreviousEvent     *EventNode
-	ParentEvent       *EventNode //gossipParent
-	OwnHash           string
-	Know              []bool
-	HaveInsertedFirst bool
-	Round             int
-	Witness           bool
-	InRow             int //only for debugging
-	Famous            bool
+	EventMessage  *types.EventMessage
+	PreviousEvent *EventNode
+	ParentEvent   *EventNode //gossipParent
+	OwnHash       string
+	Know          []bool
+	//HaveInsertedFirst bool
+	Round         int
+	Witness       bool
+	Famous        bool
+	RoundReceived int
+	ConsensusTime int64
+	Orderedplace  int
 }
 
-//HashGraph -
-var HashGraph []History
+type OrphanType struct {
+	Orphan *types.EventMessage
+	From   int
+}
 
-// EventNodes without parent which are in the hashgaph
-var orphanParent []*EventNode
+var (
+	//HashGraph -
+	HashGraph []History
 
-// EventNodes without parent which are in the hashgaph
-var orphanPrevious []*EventNode
+	// EventNodes without parent which are in the hashgaph
+	orphanParent []*EventNode
 
-//all the hashgraph events in chronological order
-var sortedEvents []*EventNode
+	// EventNodes without parent which are in the hashgaph
+	orphanPrevious []*EventNode
 
-// MU - mutex to access hashgraph
-var MU sync.Mutex
+	orphans []*OrphanType
 
-// MuChannel - Incoming Event channel mutex
-var MuChannel sync.Mutex
+	//all the hashgraph events in chronological order
+	sortedEvents []*EventNode
 
-// MuMessageChannel - Incoming Event channel mutex
-var MuMessageChannel sync.Mutex
+	// MU - mutex to access hashgraph
+	MU_HashGraph sync.RWMutex
+
+	// MuChannel - Incoming Event channel mutex
+	//MuChannel sync.RWMutex
+
+	// MU_OrderedEvents - for the list of ordered events
+	//MU_OrderedEvents sync.RWMutex
+
+	// Witnesses -
+	Witnesses map[int][]*EventNode
+)
+
+// // MuMessageChannel - Incoming Event channel mutex
+// var MuMessageChannel sync.Mutex
 
 // InitGraph -
 func InitGraph() {
@@ -68,679 +81,612 @@ func InitGraph() {
 
 	orphanParent = make([]*EventNode, 0)
 	orphanPrevious = make([]*EventNode, 0)
+	orphans = make([]*OrphanType, 0)
+	sortedEvents = make([]*EventNode, 0)
+	Witnesses = make(map[int][]*EventNode, 0)
 
-	insertFirst()
-
-	transactionCount := 2
-	makeTra(transactionCount)
-
-	transactionsCreated = ((transactionCount * variables.N) * variables.N) + variables.N
-	go SendGossip()
-	go ManageIncomingGossip()
+	insertFirstTransactions()
+	owner = make([]bool, variables.N, variables.N) // count the owners we visited
 
 }
 
-func makeTra(num int) {
-	for i := 0; i < num; i++ {
-		character := rune('b' + i)
-		tra := fmt.Sprintf("%c", character)
-		makeTransaction(tra)
-	}
-}
+var owner []bool
 
-func insertOrderedEvent(eventNode *EventNode) {
-	//sortedEvents
+//StartHashGraph -
+func StartHashGraph() {
 
-	atTheEnd := true
-	insertAtIndex := -1
-	for i, v := range sortedEvents {
-		if isBefore(eventNode, v) {
-			atTheEnd = false
-			insertAtIndex = i
-			break
+	if config.Scenario == "IDLE" {
+
+		if variables.ID < variables.T {
+			go sendGossip()
 		}
-	}
-
-	if atTheEnd {
-		sortedEvents = append(sortedEvents, eventNode)
 	} else {
-		temp := append([]*EventNode{}, sortedEvents[insertAtIndex:]...) // sub array from index till end
-		sortedEvents = append(sortedEvents[0:insertAtIndex], eventNode) // sub array from zero to index-1 (inclusive) and append EventNode
-		sortedEvents = append(sortedEvents, temp...)                    //merge the 2 subarrays
+		go sendGossip()
 	}
+
+	owner = make([]bool, variables.N, variables.N) // all are false
+	//Simulates the client
+	//go ClientTransactionCreation()
+
+	go manageClientRequest()
+	go ManageIncomingGossip()
 }
 
-func isBefore(newEventNode *EventNode, old *EventNode) bool {
-	if newEventNode.EventMessage.Timestamp < old.EventMessage.Timestamp {
-		return true
-	} else if newEventNode.EventMessage.Timestamp == old.EventMessage.Timestamp {
-		return newEventNode.EventMessage.Owner < old.EventMessage.Owner
-	}
-	return false
-}
-
-func insertFirst() {
+//The first transactions, needed to init the graph and
+//become the parent/previous of the next
+//Inserts one empty transaction for each node
+func insertFirstTransactions() {
 
 	for i := 0; i < variables.N; i++ {
-		eventMessage := new(types.EventMessage)
-		eventMessage.Timestamp = 0
-		eventMessage.Transaction = strconv.Itoa(i) + "a"
-		eventMessage.PreviousHash = "0"
-		eventMessage.ParentHash = "0"
-		eventMessage.Owner = i
-		eventMessage.Signature = []byte(strconv.Itoa(i))
+		transaction := "First" + strconv.Itoa(i)
 
-		eventNode := newEventNode(eventMessage, nil, nil, true)
-		for i := 0; i < variables.N; i++ {
+		eventMessage := types.NewEventMessage([]byte(strconv.Itoa(i)), 0, transaction, "0", "0", i, 0, -1, i)
+
+		eventNode := newEventNode(&eventMessage, nil, nil)
+		for i := 0; i < variables.N; i++ { // we dont send this event - all nodes create the exact same
 			eventNode.Know[i] = true
 		}
+		eventNode.Orderedplace = -1
+
 		k := HashGraph[i].events
 		k = append(k, eventNode)
 
 		HashGraph[i].events = k
 		sortedEvents = append(sortedEvents, eventNode)
+		DivideRoundEvent(eventNode, sortedEvents)
+
 	}
 
 	SortSlice(sortedEvents)
 }
 
-func makeTransaction(transactionLetter string) {
+func sleepScecario() {
+	if config.Scenario == "Sleep" {
+		if variables.ID >= variables.T {
+
+			waitTillSleep := 15
+
+			sleepTime := 1
+
+			goToSleep(waitTillSleep, sleepTime)
+			//goToSleep(waitTillSleep*2, sleepTime)
+
+			//goToSleep(waitTillSleep, sleepTime)
+		}
+	}
+}
+
+func goToSleep(waitTillSleep int, sleepTime int) {
+	time.Sleep(time.Duration(waitTillSleep) * time.Second)
+	sleepNow = true
+	time.Sleep(time.Duration(sleepTime) * time.Second)
+	sleepNow = false
+}
+
+var sleepNow bool = false
+
+var TotalGossip int = 0
+var sendedEvents int = 0
+
+func sendGossip() {
+	rand.Seed(time.Now().UnixNano())
+	var syncWith int
+	N := variables.N
 	ID := variables.ID
-	// if ID >= 4 {
-	// 	return
+
+	go sleepScecario()
+
+	for {
+		for sleepNow {
+			//wait till sleepNow is false
+		}
+		//Choose another node to sync
+		//Not my self
+		syncWith = rand.Intn(N)
+		for syncWith == ID {
+			syncWith = rand.Intn(N)
+		}
+
+		MU_HashGraph.Lock()
+		sendedEvents = 0
+		sentGossipTo(syncWith)
+
+		if sendedEvents > 0 {
+			TotalGossip += sendedEvents
+			logger.InfoLogger.Printf("Gossip - %d (%v)", TotalGossip, sentToAllEverything())
+
+		}
+		// newSyncWith := rand.Intn(N)
+		// for newSyncWith == ID || newSyncWith == syncWith {
+		// 	newSyncWith = rand.Intn(N)
+		// }
+		// sentGossipTo(newSyncWith)
+
+		MU_HashGraph.Unlock()
+
+		showHashGraphSize()
+	}
+
+}
+
+var prevHashGraphSize int = -1
+
+func showHashGraphSize() {
+	newHashGraphSize := len(sortedEvents)
+	if newHashGraphSize > prevHashGraphSize {
+		prevHashGraphSize = newHashGraphSize
+		logger.InfoLogger.Println("Size:", newHashGraphSize)
+
+		// if newHashGraphSize > 20 && newHashGraphSize < 50 {
+		// 	logger.WitnessLogger.Println("Size:", len(sortedEvents[18].EventMessage.Signature))
+		// 	logger.WitnessLogger.Println("Size:", len(sortedEvents[18].EventMessage.Signature))
+		// 	logger.WitnessLogger.Println(len(sortedEvents[18].EventMessage.PreviousHash))
+
+		// }
+		// for _, k := range sortedEvents {
+
+		// 	logger.InfoLogger.Println(k.EventMessage.Timestamp, " ", k.EventMessage.Transaction, " ", k.EventMessage.Owner, " ", k.EventMessage.Number, k.EventMessage.ClientID)
+		// 	logger.InfoLogger.Println("\t", k.OwnHash, " ", k.EventMessage.PreviousHash, " ", k.EventMessage.ParentHash)
+		// }
+		// logger.InfoLogger.Println("--------------------------------------")
+
+		//printHashGraph()
+	}
+
+	//logger.InfoLogger.Println(sentToAllEverything())
+
+	// if newHashGraphSize == 16 {
+	// 	for _, k := range sortedEvents {
+
+	// 		logger.InfoLogger.Println(k.EventMessage.Timestamp, " ", k.EventMessage.Transaction, " ", k.EventMessage.Owner, " ", k.EventMessage.Number, k.EventMessage.ClientID)
+	// 	}
+	// 	logger.InfoLogger.Println("--------------------------------------")
+
 	// }
 
-	k := HashGraph[ID].events
-	myLastElement := k[len(k)-1]
+	// for _, v := range sortedEvents {
+	// 	for _, k := range sortedEvents {
+	// 		if v.EventMessage.Transaction == k.EventMessage.Transaction && v.EventMessage.Owner == k.EventMessage.Owner && v.EventMessage.Number == k.EventMessage.Number && v.EventMessage.ClientID == k.EventMessage.ClientID {
+	// 			if v.EventMessage.Timestamp != k.EventMessage.Timestamp {
+	// 				logger.InfoLogger.Println(k.EventMessage.Timestamp, " ", v.EventMessage.Timestamp, " ", k.EventMessage.Transaction, " ", k.EventMessage.Owner)
 
-	eventMessage := new(types.EventMessage)
-	//eventMessage.Signature = strconv.Itoa(ID)
-	eventMessage.Timestamp = time.Now().UnixNano()
-	eventMessage.Transaction = strconv.Itoa(ID) + transactionLetter
-	eventMessage.PreviousHash = myLastElement.OwnHash
-	eventMessage.ParentHash = "0"
-	eventMessage.Owner = ID
-	CreateSignature(eventMessage)
-
-	eventNode := newEventNode(eventMessage, myLastElement, nil, true)
-	eventNode.Know[ID] = true
-
-	k = append(k, eventNode)
-
-	HashGraph[ID].events = k
-	insertOrderedEvent(eventNode)
-}
-
-func makeHash(ev *types.EventMessage) string {
-	return MD5(fmt.Sprintf("%#v", ev))
-}
-
-func newEventNode(ev *types.EventMessage, PreviousEvent *EventNode, ParentEvent *EventNode,
-	HaveInsertedFirst bool) *EventNode {
-
-	eventNode := new(EventNode)
-	eventNode.EventMessage = ev
-	eventNode.PreviousEvent = PreviousEvent
-	eventNode.ParentEvent = ParentEvent
-	eventNode.Know = make([]bool, variables.N)
-	for i := 0; i < variables.N; i++ {
-		eventNode.Know[i] = false
-	}
-
-	//eventNode.HaveInsertedFirst = HaveInsertedFirst
-	eventNode.OwnHash = makeHash(ev)
-	return eventNode
-}
-
-func newEventNodeInMyRow(parentEvent *EventNode) *EventNode {
-
-	ID := variables.ID
-	k := HashGraph[variables.ID].events
-	myLastElement := k[len(k)-1]
-
-	eventMessage := new(types.EventMessage)
-	//eventMessage.Signature = strconv.Itoa(ID)
-	eventMessage.Timestamp = time.Now().UnixNano()
-	eventMessage.Transaction = parentEvent.EventMessage.Transaction
-	eventMessage.PreviousHash = myLastElement.OwnHash
-	eventMessage.ParentHash = parentEvent.OwnHash
-	eventMessage.Owner = ID
-	CreateSignature(eventMessage)
-
-	eventNode := newEventNode(eventMessage, myLastElement, parentEvent, true)
-	eventNode.Know[ID] = true
-
-	k = append(k, eventNode)
-	HashGraph[ID].events = k
-	insertOrderedEvent(eventNode)
-	return eventNode
-}
-
-var show bool = false
-var displayCount int = 0
-var transactionsCreated int = 4
-
-func showHashGraph(writeToLog bool) {
-
-	var events []*EventNode
-	events = make([]*EventNode, 0, 10)
-
-	for i := 0; i < variables.N; i++ {
-		k := HashGraph[i].events
-		if len(k) == 0 {
-			continue
-		}
-		for _, v := range k {
-			v.InRow = i
-			events = append(events, v)
-
-		}
-	}
-	SortSlice(events)
-
-	// if len(events) < 24 {
-	// 	return
+	// 			}
+	// 		}
+	// 	}
 	// }
+	//logger.InfoLogger.Println("--------------------------------------")
 
-	// if displayCount == len(events) {
-	// 	return
-	// } else {
-	// 	displayCount = len(events)
-	// 	//fmt.Println(len(events))
-	// }
+}
 
-	total := transactionsCreated
+func printHashGraph() {
+	for _, k := range sortedEvents {
 
-	if (len(events) == total) && (sentToAllEverything()) {
-	} else {
-		return
+		logger.InfoLogger.Println(k.EventMessage.Transaction, " ", k.EventMessage.Timestamp, " ", k.EventMessage.Owner, " ")
+		logger.InfoLogger.Println("\t ", k.OwnHash, " ", k.EventMessage.PreviousHash, " ", k.EventMessage.ParentHash)
+
 	}
+	logger.InfoLogger.Println("--------------------------------------")
 
-	//DivideRounds()
-	//DecideFame()
+}
 
-	//showWit()
+var sendfaulty bool = false
+var numOfFaults int = 0
+var totalFauts int = 20
 
-	transactionsCreated = -1
-	writeToLog = true
-	if writeToLog {
-		logger.HashGraphLogger.Println("Display HashGraph in time order")
-		logger.HashGraphLogger.Println("# of Elements : ", len(events))
+func sentGossipTo(syncWith int) {
 
-		for _, v := range events {
-			//logger.HashGraphLogger.Println("---", v.OwnHash, v.Know, v.HaveInsertedFirst)
-			logger.HashGraphLogger.Println(v.Round, v.Witness, v.Famous)
+	//syncWith = (variables.ID + 1) % variables.N
 
-			//logger.HashGraphLogger.Println(v.EventMessage.Signature, v.EventMessage.Timestamp, v.EventMessage.Transaction, v.EventMessage.PreviousHash, v.EventMessage.ParentHash, v.EventMessage.Owner)
-			logger.HashGraphLogger.Println(v.EventMessage.Timestamp, v.EventMessage.Transaction, v.EventMessage.PreviousHash, v.EventMessage.ParentHash, v.EventMessage.Owner)
+	myEvents := make([]*types.EventMessage, 0)
+	othersEvents := make([]*types.EventMessage, 0)
 
-			// if v.PreviousEvent == nil {
-			// 	logger.HashGraphLogger.Println(v.EventMessage.Transaction)
-			// } else {
+	for _, v := range sortedEvents {
+		if v.Know[syncWith] == false {
 
-			// 	logger.HashGraphLogger.Print(v.InRow, " - ", v.EventMessage.Transaction, " - ", v.PreviousEvent.EventMessage.Transaction, " - ")
-			// 	if v.ParentEvent != nil {
-			// 		logger.HashGraphLogger.Println(v.ParentEvent.InRow, " - ", v.ParentEvent.EventMessage.Transaction)
-			// 	} else {
-			// 		logger.HashGraphLogger.Println(" - No parent")
-			// 	}
-			// }
+			isNormal := config.Scenario == "NORMAL" || (config.Scenario == "IDLE" && variables.ID < variables.T) || config.Scenario == "Sleep"
+			if isNormal {
+				//SendEvent(v.EventMessage, syncWith)
+
+				if v.EventMessage.Owner == variables.ID {
+					myEvents = append(myEvents, v.EventMessage)
+				} else {
+					othersEvents = append(othersEvents, v.EventMessage)
+				}
+
+				sendedEvents += 1
+			} else if config.Scenario == "TimestampChange" {
+				timestampScenario1(v, syncWith)
+			} else if config.Scenario == "SmallTimestamp" {
+				timestampScenario2(v, syncWith)
+			} else if config.Scenario == "SmallTimestampToSome" {
+				timestampScenario3(v, syncWith)
+			} else if config.Scenario == "Fork" {
+				timestampScenarioFork(v, syncWith)
+			}
+
+			v.Know[syncWith] = true
+
 		}
-	} else {
-		fmt.Println("Display HashGraph in time order")
-		fmt.Println("# of Elements : ", len(events))
-
-		for _, v := range events {
-			fmt.Println("---", v.OwnHash, v.Know, v.HaveInsertedFirst)
-			fmt.Println(v.EventMessage)
-		}
-
 	}
 
-	go checkExit()
-}
-
-func checkExit() {
-	// logger.HashGraphLogger.Println("len(MessageChannel)")
-
-	// logger.HashGraphLogger.Println(len(MessageChannel))
-	time.Sleep(time.Second * 10)
-	if len(MessageChannel) == 0 && len(EventChannel) == 0 {
-		os.Exit(0)
+	for _, v := range myEvents {
+		SendEvent(v, syncWith)
 	}
+	for _, v := range othersEvents {
+		SendEvent(v, syncWith)
+	}
+
+	tempEventMessage := types.NewEventMessage([]byte("0"), 0, "0", "0", "0", -1, -1, -1, -1)
+	eventMessage := &tempEventMessage
+	threshenc.CreateSignature(eventMessage)
+	SendEvent(eventMessage, syncWith)
+	//sendedEvents += 1
 }
 
-// VerifySignature -
-func VerifySignature(ev *types.EventMessage) bool {
+func getMaxTimestampFromPrevEvent(v *EventNode) int64 {
+	var timestamp int64 = int64(0)
 
-	//sign := ev.Signature
-	k := *ev
-	k.Signature = []byte("0")
-	msg := fmt.Sprintf("%#v", k)
-	ans := threshenc.VerifyMessage([]byte(msg), ev.Signature, ev.Owner)
-	return ans
+	if v.PreviousEvent != nil && v.PreviousEvent.EventMessage != nil {
+		timestamp = v.PreviousEvent.EventMessage.Timestamp
+	}
+	if v.ParentEvent != nil && v.ParentEvent.EventMessage != nil {
+		timestamp = max64(timestamp, v.ParentEvent.EventMessage.Timestamp)
+	}
+	return timestamp
 }
 
-// CreateSignature -
-func CreateSignature(ev *types.EventMessage) {
+// func timestampScenario111(v *EventNode, syncWith int) {
+// 	isFaulty := variables.ID >= variables.T && v.EventMessage.Owner == variables.ID && syncWith == 0
 
-	//sign := ev.Signature
-	k := *ev
-	k.Signature = []byte("0")
-	msg := fmt.Sprintf("%#v", k)
-	ev.Signature = threshenc.SignMessage([]byte(msg))
+// 	//if isFaulty && !sendfaulty {
+// 	if isFaulty && !sendfaulty {
 
-}
+// 		var tempEventMessage types.EventMessage
+// 		var now int64 = time.Now().UnixNano()
 
-// // ByTimestamp
-// // type ByTimestamp []*EventNode
+// 		maxPrev := getMaxTimestampFromPrevEvent(v)
+// 		//maxPrev := int64()
+// 		if maxPrev > 0 {
 
-// // func (a ByTimestamp) Len() int           { return len(a) }
-// // func (a ByTimestamp) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-// // func (a ByTimestamp) Less(i, j int) bool { return a[i].Timestamp < a[j].Timestamp }
+// 			newTimestamp := rand.Int63n(now-maxPrev) + 2
+// 			tempEventMessage = types.NewEventMessage([]byte("0"), newTimestamp, v.EventMessage.Transaction, v.EventMessage.PreviousHash, v.EventMessage.ParentHash, v.EventMessage.Owner, v.EventMessage.Number, v.EventMessage.ClientID)
+// 		} else {
+// 			SendEvent(v.EventMessage, syncWith)
+// 			v.Know[syncWith] = true
+// 			return
+// 		}
 
-// func sorting() {
-
-// 	for i := 0; i < variables.N; i++ {
-// 		k := HashGraph[i].events
-// 		//sort.Sort(ByTimestamp(k))
-
-// 		sort.Slice(k[:], func(i, j int) bool {
-// 			return k[i].EventMessage.Timestamp < k[j].EventMessage.Timestamp
-// 		})
-
+// 		eventMessage := &tempEventMessage
+// 		threshenc.CreateSignature(eventMessage)
+// 		SendEvent(eventMessage, syncWith)
+// 		numOfFaults++
+// 		if numOfFaults == totalFauts {
+// 			sendfaulty = true
+// 		}
+// 	} else {
+// 		SendEvent(v.EventMessage, syncWith)
 // 	}
 
 // }
 
-// SortSlice -
-func SortSlice(events []*EventNode) {
-	sort.Slice(events[:], func(i, j int) bool {
-		if events[i].EventMessage.Timestamp < events[j].EventMessage.Timestamp {
-			return true
-		} else if events[i].EventMessage.Timestamp == events[j].EventMessage.Timestamp {
-			return events[i].EventMessage.Owner < events[j].EventMessage.Owner
+func timestampScenario1(v *EventNode, syncWith int) {
+	isFaulty := variables.ID >= variables.T && v.EventMessage.Owner == variables.ID && v.EventMessage.ParentHash == "0" && syncWith < variables.N/2
+	//totalFauts = 50
+	//if isFaulty && !sendfaulty {
+	if isFaulty {
+
+		var tempEventMessage types.EventMessage
+		newTimestamp := int64(100 + numOfFaults)
+		tempEventMessage = types.NewEventMessage([]byte("0"), newTimestamp, v.EventMessage.Transaction, "0", "0", v.EventMessage.Owner, v.EventMessage.Number, v.EventMessage.ClientID, v.EventMessage.FirstOwner)
+		eventMessage := &tempEventMessage
+
+		threshenc.CreateSignature(eventMessage)
+		SendEvent(eventMessage, syncWith)
+		sendedEvents += 1
+		numOfFaults++
+		if numOfFaults == totalFauts {
+			sendfaulty = true
+
 		}
-		return false
-	})
+	} else {
+		SendEvent(v.EventMessage, syncWith)
+		sendedEvents += 1
+	}
+
 }
 
-var changes bool = true
+func timestampScenario2(v *EventNode, syncWith int) {
+	isFaulty := variables.ID >= variables.T && v.EventMessage.Owner == variables.ID && v.EventMessage.ParentHash == "0"
 
-// SendGossip -
-func SendGossip() {
-	// if variables.ID >= 2 {
-	// 	return
-	// }
+	//if isFaulty && !sendfaulty {
+	if isFaulty {
 
-	rand.Seed(time.Now().UnixNano())
-	var syncWith int
-	for {
-		syncWith = rand.Intn(variables.N)
+		var tempEventMessage types.EventMessage
+		newTimestamp := int64(100 + numOfFaults)
+		tempEventMessage = types.NewEventMessage([]byte("0"), newTimestamp, v.EventMessage.Transaction, v.EventMessage.PreviousHash, v.EventMessage.ParentHash, v.EventMessage.Owner, v.EventMessage.Number, v.EventMessage.ClientID, v.EventMessage.FirstOwner)
+		eventMessage := &tempEventMessage
 
-		for syncWith == variables.ID {
-			syncWith = rand.Intn(variables.N)
+		threshenc.CreateSignature(eventMessage)
+		SendEvent(eventMessage, syncWith)
+		numOfFaults++
+		if numOfFaults == totalFauts {
+			sendfaulty = true
 		}
+	} else {
+		SendEvent(v.EventMessage, syncWith)
+	}
 
-		count := 0
+}
 
-		var events []*EventNode
-		events = make([]*EventNode, 0, 10)
+func timestampScenario3(v *EventNode, syncWith int) {
+	isFaulty := variables.ID >= variables.T && v.EventMessage.Owner == variables.ID && v.EventMessage.ParentHash == "0" && syncWith == 0
 
-		for _, v := range sortedEvents {
-			if v.Know[syncWith] == false {
-				events = append(events, v)
-			}
+	//if isFaulty && !sendfaulty {
+	if isFaulty {
+		var tempEventMessage types.EventMessage
+		newTimestamp := int64(100 + numOfFaults)
+		tempEventMessage = types.NewEventMessage([]byte("0"), newTimestamp, v.EventMessage.Transaction, v.EventMessage.PreviousHash, v.EventMessage.ParentHash, v.EventMessage.Owner, v.EventMessage.Number, v.EventMessage.ClientID, v.EventMessage.FirstOwner)
+		eventMessage := &tempEventMessage
+
+		threshenc.CreateSignature(eventMessage)
+		SendEvent(eventMessage, syncWith)
+		numOfFaults++
+		if numOfFaults == totalFauts {
+			sendfaulty = true
 		}
+	} else {
+		SendEvent(v.EventMessage, syncWith)
+	}
 
-		// for i := 0; i < variables.N; i++ {
-		// 	k := HashGraph[i].events
-		// 	count += len(k)
-		// 	if len(k) == 0 {
-		// 		continue
-		// 	}
-		// 	for _, v := range k {
-		// 		if v.Know[syncWith] == false {
+}
 
-		// 			events = append(events, v)
-		// 		}
-		// 	}
-		// }
+//needs changes
+func timestampScenarioFork(v *EventNode, syncWith int) {
+	isFaulty := variables.ID >= variables.T && v.EventMessage.Owner == variables.ID && v.EventMessage.ParentHash == "0" && syncWith == 0
+	totalFauts = 50
+	if isFaulty && !sendfaulty {
+		//if isFaulty {
 
-		if len(events) == 0 {
-			if changes {
-				fmt.Println("------------------------")
-				fmt.Println("No HashGrpah Changes, Event# = ", count)
-				fmt.Println("Ordered Events# = ", len(sortedEvents))
+		var tempEventMessage types.EventMessage
+		var now int64 = time.Now().UnixNano()
 
-				changes = false
-			}
-			continue
-		}
+		maxPrev := getMaxTimestampFromPrevEvent(v)
+		var newTimestamp int64
 
-		//SortSlice(events)
-
-		for _, v := range events {
+		//maxPrev := int64()
+		if maxPrev > 0 {
+			newTimestamp = rand.Int63n(now-maxPrev-100) + 2
+			tempEventMessage = types.NewEventMessage([]byte("0"), newTimestamp, v.EventMessage.Transaction, v.EventMessage.PreviousHash, v.EventMessage.ParentHash, v.EventMessage.Owner, v.EventMessage.Number, v.EventMessage.ClientID, v.EventMessage.FirstOwner)
+		} else {
 			SendEvent(v.EventMessage, syncWith)
 			v.Know[syncWith] = true
-
-			fmt.Println("------------------------\n")
-			fmt.Println("Sending")
-			fmt.Println("Send ", v.EventMessage)
-			fmt.Println("To ", syncWith)
-
+			return
 		}
 
-		showHashGraph(false)
-		changes = true
+		eventMessage := &tempEventMessage
+		threshenc.CreateSignature(eventMessage)
+		SendEvent(eventMessage, syncWith)
+		sendedEvents += 1
+		numOfFaults++
+		if numOfFaults == totalFauts {
+			sendfaulty = true
+		}
+	} else {
+		SendEvent(v.EventMessage, syncWith)
+		sendedEvents += 1
 	}
 
 }
 
-func sentToAllEverything() bool {
-	for i := 0; i < variables.N; i++ {
-		k := HashGraph[i].events
-		if len(k) == 0 {
-			continue
+func manageClientRequest() {
+
+	for msg := range ClientChannel {
+		MU_HashGraph.Lock()
+
+		if InsertClientTransactionInGraph(msg.clientTransaction, msg.transactionNumber, msg.clientID) {
+			//executeAlgorithms()
 		}
-		for _, v := range k {
-			for syncWith := 0; syncWith < 4; syncWith++ {
-				if v.Know[syncWith] == false {
-					return false
-				}
-			}
-		}
+
+		MU_HashGraph.Unlock()
 	}
-	return true
 }
 
-//ManageIncomingGossip -
+var countTrans int = 0
+
+func executeAlgorithms() {
+
+	//countTrans++
+
+	//if countTrans%(variables.N*10) == 0 {
+	DivideRounds()
+	DecideFame()
+	Ord()
+	//}
+	countAll()
+
+}
+
 func ManageIncomingGossip() {
 
-	for {
-		MuChannel.Lock()
-		count := len(EventChannel)
+	//lastSync := -1
 
-		if count > 0 {
-			gossip := <-EventChannel
+	for gossip := range EventChannel {
 
-			MuChannel.Unlock()
-			from := gossip.From
-			msg := gossip.Ev
-			checkGossip(msg, from)
-			showHashGraph(true)
+		from := gossip.From
+		msg := gossip.Ev
+
+		MU_HashGraph.Lock()
+
+		if msg.Transaction == "0" {
+			owner[from] = true
 		} else {
-			MuChannel.Unlock()
+			res := checkGossip(msg, from)
+			if res == 0 {
+				countTrans++
 
-		}
-
-	}
-
-}
-
-func checkGossip(ev *types.EventMessage, from int) {
-	verify := VerifySignature(ev) // verify message signature
-	if !verify {
-		//logger.HashGraphLogger.Println("Not Verify")
-		return
-	}
-	// logger.HashGraphLogger.Println("\n\n")
-
-	// logger.HashGraphLogger.Println("--------------------------")
-	// logger.HashGraphLogger.Println("Receice msg from ", from)
-	// logger.HashGraphLogger.Println(*ev)
-
-	//exists, existEventNode := checkIfExistsInHashGraph(ev, from)
-	exists, _ := checkIfExistsInHashGraph(ev, from)
-	//logger.HashGraphLogger.Println("Exists ", exists)
-
-	if exists == 1 {
-		return
-	}
-	//else it does not exists in hashGraph
-
-	//it is not nill - always has a previous
-	previousEvent := getPreviousEvent(ev)
-	// if previousEvent == nil {
-	// 	return
-	// }
-
-	orphan := false
-	parentEvent, err := getParentEvent(ev)
-	if err != nil { // if we didnt have the parent it will be inserted in orphaned list
-		orphan = true
-	}
-
-	// logger.HashGraphLogger.Println("Orphan ", orphan)
-	// logger.HashGraphLogger.Println("New Event ")
-
-	eventNode := insertIncomingGossip(ev, previousEvent, parentEvent)
-	//logger.HashGraphLogger.Println(eventNode)
-
-	if previousEvent == nil {
-		orphanPrevious = append(orphanPrevious, eventNode)
-	}
-
-	if orphan {
-		orphanParent = append(orphanParent, eventNode)
-	}
-
-	findOrphanParent(eventNode)
-	findOrphanPrevious(eventNode)
-	//checkIfItIsANewTransaction(eventNode, from)
-	checkIfItIsANewTransaction2(eventNode, from)
-
-}
-
-func findOrphanPrevious(eventNode *EventNode) {
-	var toRemove []*EventNode
-
-	toRemove = make([]*EventNode, 0)
-	for _, v := range orphanPrevious {
-		if v.EventMessage.PreviousHash == eventNode.OwnHash {
-			v.PreviousEvent = eventNode
-			toRemove = append(toRemove, v)
-		}
-	}
-	removeEventNodePrevious(toRemove)
-}
-
-// RemoveEventNode -
-func removeEventNodePrevious(toRemove []*EventNode) {
-	for _, v := range toRemove {
-		for i, k := range orphanPrevious {
-			if v == k {
-				orphanPrevious = RemoveIndex(orphanPrevious, i)
-				break
 			}
+			// else if res == 2 {
+			// 	orphan := new(OrphanType)
+			// 	orphan.Orphan = msg
+			// 	orphan.From = from
+
+			// 	orphans = append(orphans, orphan)
+			// }
 		}
-	}
-}
 
-func findOrphanParent(eventNode *EventNode) {
-	var toRemove []*EventNode
-
-	toRemove = make([]*EventNode, 0)
-	for _, v := range orphanParent {
-		if v.EventMessage.ParentHash == eventNode.OwnHash {
-			v.ParentEvent = eventNode
-			toRemove = append(toRemove, v)
+		for testSame2() {
 		}
-	}
-	RemoveEventNode(toRemove)
-}
 
-// RemoveEventNode -
-func RemoveEventNode(toRemove []*EventNode) {
-	for _, v := range toRemove {
-		for i, k := range orphanParent {
-			if v == k {
-				orphanParent = RemoveIndex(orphanParent, i)
-				break
-			}
-		}
-	}
-}
+		// if len(EventChannel) == 0 {
 
-// RemoveIndex -
-func RemoveIndex(s []*EventNode, index int) []*EventNode {
-	return append(s[:index], s[index+1:]...)
-}
+		// 	countSyncOwners := 0
+		// 	for _, v := range owner {
+		// 		if v {
+		// 			countSyncOwners++
+		// 		}
+		// 	}
 
-// Check if i have the message
-//returns true if i have it in the hashmap and sets that sender knows that message
-// returns 0 = not exists
-// returns 1 = exists in hashgraph
-func checkIfExistsInHashGraph(ev *types.EventMessage, from int) (int, *EventNode) {
-	hash := makeHash(ev)
-	var exists = false
-	var eventNode *EventNode = nil
+		// 	//if countSyncOwners >= variables.T-1 {
 
-Loop:
-	for i := 0; i < variables.N; i++ {
-		k := HashGraph[i].events
-		if len(k) == 0 {
-			continue
-		}
-		for _, v := range k {
-			if v.OwnHash == hash {
-				exists = true
-				eventNode = v
-				break Loop
-			}
-		}
-	}
+		// 	// for testSame() {
 
-	if exists {
-		eventNode.Know[from] = true
-		return 1, eventNode
-	} else {
-		return 0, nil
+		// 	// }
+
+		// 	testSame()
+
+		// 	owner = make([]bool, variables.N, variables.N) // count the owners we visited
+		// 	countTrans = 0
+		// 	//countAll()
+		// 	//}
+		// 	//insertNotOrphansInGraph()
+		// }
+
+		MU_HashGraph.Unlock()
 
 	}
 
 }
 
-// find previous event
-// the event in owner map
-func getPreviousEvent(ev *types.EventMessage) *EventNode {
-
-	k := HashGraph[ev.Owner].events
-	if len(k) == 0 {
-		return nil
-	}
-
-	for _, v := range k {
-		if v.OwnHash == ev.PreviousHash {
+func checkSameTransaction(ev *types.EventMessage) *EventNode {
+	for _, v := range sortedEvents {
+		if v.EventMessage.Owner == ev.Owner && v.EventMessage.Transaction == ev.Transaction && v.EventMessage.Number == ev.Number && v.EventMessage.ClientID == ev.ClientID {
 			return v
 		}
 	}
 	return nil
 }
 
-// find parent event
-func getParentEvent(ev *types.EventMessage) (*EventNode, error) {
+// func check(ev *types.EventMessage) bool {
 
-	if ev.ParentHash == "0" {
-		return nil, nil
+// 	event := checkSameTransaction(ev)
+// 	if event != nil {
+// 		if event.EventMessage.Timestamp != ev.Timestamp {
+// 			logger.WitnessLogger.Printf("Owner:%d From:%d", ev.Owner, event.EventMessage.Owner)
+// 			return true
+// 		}
+// 	}
+// 	return false
+
+// }
+
+//false ==1
+//true ==0
+//orphan ==2
+
+func checkGossip(ev *types.EventMessage, from int) int {
+	//isFaulty := check(ev)
+
+	// logger.InfoLogger.Println("Receive from ", from)
+	// logger.InfoLogger.Println(ev.Timestamp, " ", ev.Owner, " ", ev.PreviousHash, " ", ev.ParentHash)
+
+	if ev.Timestamp > time.Now().UnixNano() {
+		//logger.WitnessLogger.Printf("After Now")
+
+		return 1
 	}
 
-	for i := 0; i < variables.N; i++ {
-		if i == ev.Owner {
-			continue
-		}
-		k := HashGraph[i].events
-		if len(k) == 0 {
-			continue
-		}
+	verify := threshenc.VerifySignature(ev) // verify message signature
+	if !verify {
+		//logger.WitnessLogger.Printf("Not verified")
 
-		for _, v := range k {
-			if v.OwnHash == ev.ParentHash {
-				return v, nil
+		return 1
+	}
+
+	exist := checkIfExistsInHashGraph(ev, from)
+	if exist {
+		return 1
+	}
+
+	// exist = haveOwnerTransaction(ev)
+	// if exist {
+	// 	return true
+	// }
+
+	previousEvent := getPreviousEvent(ev)
+
+	orphan := false
+	parentEvent, err := getParentEvent(ev)
+	if err != nil { // if we didnt have the parent it will be inserted in orphaned list
+		orphan = true
+	} else {
+		// its not orphan from parent
+		// the timestamp has to be after parents
+		if parentEvent != nil {
+			if !isAfter(ev, parentEvent) {
+				return 1
 			}
 		}
 	}
 
-	return nil, errors.New("Parent not exists")
-}
-
-func insertIncomingGossip(ev *types.EventMessage, previousEvent *EventNode, parentEvent *EventNode) *EventNode {
-	eventNode := newEventNode(ev, previousEvent, parentEvent, false)
-	eventNode.Know[variables.ID] = true
-	insertEventNodeInHashGraph(eventNode)
-	return eventNode
-}
-
-func insertEventNodeInHashGraph(eventNode *EventNode) {
-	OwnerID := eventNode.EventMessage.Owner
-	k := HashGraph[OwnerID].events
-	k = append(k, eventNode)
-	HashGraph[OwnerID].events = k
-	insertOrderedEvent(eventNode)
-}
-
-func checkIfItIsANewTransaction(eventNode *EventNode, from int) {
-
-	if eventNode.EventMessage.Owner != from {
-		return
-	}
-
-	haveInserted := CheckHaveInsertedFirst(eventNode)
-	if haveInserted {
-		return
-	}
-	//	logger.HashGraphLogger.Println("Inserting also new Transaction")
-
-	newEvent := newEventNodeInMyRow(eventNode)
-	abc(newEvent)
-}
-
-func abc(eventNode *EventNode) {
-	for eventNode != nil {
-		eventNode.HaveInsertedFirst = true
-		eventNode = eventNode.ParentEvent
-	}
-}
-
-func checkIfItIsANewTransaction2(eventNode *EventNode, from int) {
-	//logger.HashGraphLogger.Println("Check if its a new Transaction")
-
-	if haveTransaction(eventNode) {
-		return
-	}
-	//logger.HashGraphLogger.Println("Insert New Event in my row")
-	newEventNodeInMyRow(eventNode)
-	//ev := newEventNodeInMyRow(eventNode)
-	//logger.HashGraphLogger.Println(ev, "\n\n")
-
-	//abc(newEvent)
-}
-
-func haveTransaction(eventNode *EventNode) bool {
-	k := HashGraph[variables.ID].events
-	for _, v := range k {
-		if v.EventMessage.Transaction == eventNode.EventMessage.Transaction {
-			return true
+	// its not orphan from previous
+	if previousEvent != nil {
+		if !isAfter(ev, previousEvent) {
+			return 1
 		}
 	}
-	return false
-}
 
-//CheckHaveInsertedFirst -
-// follow parent events and check i the first event of this transaction(=Event without parent)
-// check haveInsertetFirst
-// that shows if i have insert this transaction in my row on graph
-// returns if i have insert it
-// makes HaveInsertedFirst variable in all eventNodes in the path true
-// because i will insert it or it is already true
-func CheckHaveInsertedFirst(eventNode *EventNode) bool {
-	var haveInserted bool
-	if eventNode.ParentEvent != nil {
-		haveInserted = CheckHaveInsertedFirst(eventNode.ParentEvent)
-	} else { //eventNode.ParentEvent == nil
-		haveInserted = eventNode.HaveInsertedFirst
+	// if previousEvent == nil || orphan {
+	// 	//orphans = append(orphans, ev)
+	// 	return 2
+	// }
+
+	// found := false
+	// for _, v := range sortedEvents {
+	// 	if v.EventMessage.Transaction == ev.Transaction && v.EventMessage.Owner == ev.Owner && v.EventMessage.Number == ev.Number && v.EventMessage.ClientID == ev.ClientID {
+	// 		logger.InfoLogger.Println("Found")
+	// 		found = true
+	// 		if v.EventMessage.Timestamp != ev.Timestamp {
+	// 			logger.InfoLogger.Println(ev.Timestamp, " ", v.EventMessage.Timestamp, " ", v.EventMessage.Transaction, " ", v.EventMessage.Owner, " ", v.EventMessage.Number, v.EventMessage.ClientID)
+	// 		} else {
+	// 			logger.InfoLogger.Println(v.EventMessage.Timestamp, " ", v.EventMessage.Transaction, " ", v.EventMessage.Owner, " ", v.EventMessage.Number, v.EventMessage.ClientID)
+	// 			logger.InfoLogger.Println("-----------------------")
+
+	// 			return false
+	// 		}
+	// 	}
+	// }
+
+	// if found {
+	// 	logger.InfoLogger.Println("-----------------------")
+
+	// }
+
+	eventNode := insertIncomingGossip(ev, previousEvent, parentEvent)
+	if previousEvent == nil {
+		orphanPrevious = append(orphanPrevious, eventNode)
+	}
+	if orphan {
+		orphanParent = append(orphanParent, eventNode)
 	}
 
-	eventNode.HaveInsertedFirst = true
-	return haveInserted
+	findOrphanParent(eventNode)
+	findOrphanPrevious(eventNode)
+
+	checkIfItIsANewTransaction(eventNode)
+	return 0
+}
+
+func isAfter(ev *types.EventMessage, previous *EventNode) bool {
+
+	return ev.Timestamp > previous.EventMessage.Timestamp
 }

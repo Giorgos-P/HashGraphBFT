@@ -1,65 +1,73 @@
 package app
 
 import (
+	"HashGraphBFT/logger"
 	"HashGraphBFT/variables"
 )
 
-// Witnesses -
-var Witnesses map[int][]*EventNode
+var witnessChangeRound int = 0
+var witnessChange bool = true
 
 // DivideRounds -
 func DivideRounds() {
 
-	Witnesses = make(map[int][]*EventNode, 0)
+	countRec := 0
 
-	graph := HashGraph
+	hasChange := false
+	for i, v := range sortedEvents {
+		if i >= end {
+			break
+		}
+		if hasChange {
+			DivideRoundEvent(v, sortedEvents)
+			v.Orderedplace = i
+			countRec += 1
+		} else {
+			if i == v.Orderedplace {
+				continue
+			} else {
+				hasChange = true
+				v.Orderedplace = i
+				DivideRoundEvent(v, sortedEvents)
+				countRec += 1
+			}
+		} //else hasChange
+	} // for range
 
+	logger.InfoLogger.Println("Recursions:", countRec)
+
+}
+
+func insertFirstWitness(eventNode *EventNode) {
 	var events []*EventNode
-	events = make([]*EventNode, 0, 10)
-
-	for i := 0; i < variables.N; i++ {
-		k := graph[i].events
-		if len(k) == 0 {
-			continue
-		}
-		for _, v := range k {
-			events = append(events, v)
-		}
-	}
-	SortSlice(events)
-	for _, v := range events {
-		DivideRoundEvent(v, events)
-	}
+	events = make([]*EventNode, 0, variables.N)
+	events = append(events, eventNode)
+	Witnesses[eventNode.Round] = events
 }
 
 // DivideRoundEvent -
 func DivideRoundEvent(eventNode *EventNode, events []*EventNode) {
 
-	if eventNode.PreviousEvent == nil {
+	if eventNode.PreviousEvent == nil && eventNode.EventMessage.Timestamp == 0 {
 		eventNode.Round = 1
 		eventNode.Witness = true
-
 		round := 1
-		ev, ok := Witnesses[round]
+		_, ok := Witnesses[round]
 		if !ok {
-			var events []*EventNode
-			events = make([]*EventNode, 0, variables.N)
-			events = append(events, eventNode)
-			Witnesses[round] = events
+			insertFirstWitness(eventNode)
+			witnessChangeRound = 1
+			witnessChange = true
 		} else {
-			ev = append(ev, eventNode)
-			Witnesses[round] = ev
-		}
+			checkInsertWitness(eventNode)
+			witnessChangeRound = 1
+			witnessChange = true
+		} // else !ok
+		return
+	}
 
-		// if len(Witnesses) < round {
-		// 	newRoundWitnesses := new(History)
-		// 	Witnesses = append(Witnesses, *newRoundWitnesses)
-		// 	Witnesses[round-1].events = make([]*EventNode, 0)
-		// 	Witnesses[round-1].events = append(Witnesses[round-1].events, eventNode)
-		//  } else {
-		//  	Witnesses[round-1].events = append(Witnesses[round-1].events, eventNode)
-		// }
-
+	if isOrphan(eventNode) {
+		eventNode.Round = -1
+		eventNode.Orderedplace = -1
 		return
 	}
 
@@ -71,12 +79,10 @@ func DivideRoundEvent(eventNode *EventNode, events []*EventNode) {
 	eventNode.Round = round
 
 	numStrongSee := 0
+	limit := variables.T // threshold 2N/3
 
 	for _, v := range events {
-		if eventNode.EventMessage.Timestamp < v.EventMessage.Timestamp {
-			continue
-		}
-		if numStrongSee > 2*variables.N/3 {
+		if numStrongSee >= limit {
 			break
 		}
 		if v.Round == round && StronglySee(eventNode, v) {
@@ -84,103 +90,90 @@ func DivideRoundEvent(eventNode *EventNode, events []*EventNode) {
 		}
 	} //for
 
-	if numStrongSee > 2*variables.N/3 {
+	if numStrongSee >= limit {
 		round++
+		if eventNode.Witness { // if it is witness in the previous round we remove it - it is in the next Round now
+			ev, ok := Witnesses[round-1]
+			if ok {
+				place := -1
+				for i, v := range ev {
+					if v.OwnHash == eventNode.OwnHash {
+						place = i
+						break
+					}
+
+				}
+				if place > -1 {
+					ev = removeElementAtIndex(ev, place)
+					eventNode.Witness = false
+					Witnesses[round-1] = ev
+				}
+				witnessChange = true
+				witnessChangeRound = min(witnessChangeRound, round-1)
+
+			} //if ok
+		}
 	}
 	eventNode.Round = round
 
 	var witness bool
+
 	witness = eventNode.PreviousEvent == nil || round > eventNode.PreviousEvent.Round
+
 	eventNode.Witness = witness
 
 	if witness {
-		ev, ok := Witnesses[round]
+		_, ok := Witnesses[round]
 		if !ok {
-			var events []*EventNode
-			events = make([]*EventNode, 0, variables.N)
-			events = append(events, eventNode)
-			Witnesses[round] = events
+			insertFirstWitness(eventNode)
+			if witnessChange {
+				witnessChangeRound = min(witnessChangeRound, round)
+			} else {
+				witnessChangeRound = round
+			}
+			witnessChange = true
 		} else {
+			checkInsertWitness(eventNode)
+			if witnessChange {
+				witnessChangeRound = min(witnessChangeRound, round)
+			} else {
+				witnessChangeRound = round
+			}
+			witnessChange = true
+		} //else !ok
 
-			ev = append(ev, eventNode)
-			Witnesses[round] = ev
-		}
-
-		// 	if len(Witnesses) < round {
-		// 		fmt.Println("------------")
-		// 		fmt.Println("len(Witnesses) = ", len(Witnesses))
-		// 		fmt.Println("round = ", round)
-		// 		newRoundWitnesses := new(History)
-		// 		Witnesses = append(Witnesses, *newRoundWitnesses)
-		// 		fmt.Println("len(Witnesses) = ", len(Witnesses))
-
-		// 		Witnesses[round-1].events = make([]*EventNode, 0)
-		// 		Witnesses[round-1].events = append(Witnesses[round-1].events, eventNode)
-		// 	} else {
-		// 		Witnesses[round-1].events = append(Witnesses[round-1].events, eventNode)
-		// 	}
 	}
 }
 
-var ownerSee []bool
-var visited []*EventNode
+func checkInsertWitness(eventNode *EventNode) {
+	ev := Witnesses[eventNode.Round]
 
-//StronglySee -
-func StronglySee(x *EventNode, y *EventNode) bool {
-	ownerSee = make([]bool, variables.N, variables.N)
-	visited = make([]*EventNode, 0)
+	ev = append(ev, eventNode)
+	min := eventNode.EventMessage.Timestamp
+	place := len(ev) - 1
+	node := eventNode
 
-	for i := 0; i < variables.N; i++ {
-		ownerSee[i] = false
-	}
-
-	canSee := see(x, y)
-	if !canSee {
-		return false
-	}
-
-	count := 0
-	for i := 0; i < variables.N; i++ {
-		if ownerSee[i] {
-			count++
+	for i, v := range ev {
+		if v.EventMessage.Owner == eventNode.EventMessage.Owner && v.EventMessage.Timestamp < min {
+			v.Witness = true
+			min = v.EventMessage.Timestamp
+			place = i
+			node = v
 		}
 	}
 
-	if count > 2*variables.N/3 {
-		return true
-	} else {
-		return false
-	}
-
-}
-
-func see(x *EventNode, y *EventNode) bool {
-	if x.OwnHash == y.OwnHash {
-		ownerSee[x.EventMessage.Owner] = true
-		return true
-	}
-	if x.Round < y.Round {
-		return false
-	}
-
-	ownerSee[x.EventMessage.Owner] = true
-	var a, b bool = false, false
-	if x.ParentEvent != nil && !isVisited(x.ParentEvent) {
-		visited = append(visited, x.ParentEvent)
-		a = see(x.ParentEvent, y)
-	}
-	if x.PreviousEvent != nil && !isVisited(x.PreviousEvent) {
-		visited = append(visited, x.PreviousEvent)
-		b = see(x.PreviousEvent, y)
-	}
-	return a || b
-}
-
-func isVisited(x *EventNode) bool {
-	for _, v := range visited {
-		if x.OwnHash == v.OwnHash {
-			return true
+	for i := 0; i < len(ev); i++ {
+		//for i, v := range ev {
+		v := ev[i]
+		if v.EventMessage.Owner == eventNode.EventMessage.Owner && i != place {
+			v.Witness = false
+			v.Famous = false
+			ev = append(ev[:i], ev[i+1:]...)
+			i--
+			place--
 		}
 	}
-	return false
+	node.Witness = true
+	Witnesses[eventNode.Round] = ev
+
 }

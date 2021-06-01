@@ -21,7 +21,10 @@ type EventMessage struct {
 	Transaction  string
 	PreviousHash string
 	ParentHash   string
-	Owner        int
+	Owner        int // the node which created this / also shows in which row it is in the hashGraph
+	Number       int // increased number
+	ClientID     int // which client sent me this transaction
+	FirstOwner   int
 }
 
 // NewMessage - Creates a new payload message
@@ -30,8 +33,11 @@ func NewMessage(payload []byte, Type string) Message {
 }
 
 // NewEventMessage - Creates a new event message
-func NewEventMessage(Signature []byte, Timestamp int64, Transaction string, PreviousHash string, ParentHash string, Owner int) EventMessage {
-	return EventMessage{Signature: Signature, Timestamp: Timestamp, Transaction: Transaction, PreviousHash: PreviousHash, ParentHash: ParentHash, Owner: Owner}
+// func NewEventMessage(Signature []byte, Timestamp int64, Transaction string, PreviousHash string, ParentHash string, Owner int, Number int, ClientID int) EventMessage {
+// 	return EventMessage{Signature: Signature, Timestamp: Timestamp, Transaction: Transaction, PreviousHash: PreviousHash, ParentHash: ParentHash, Owner: Owner, Number: Number, ClientID: ClientID}
+// }
+func NewEventMessage(Signature []byte, Timestamp int64, Transaction string, PreviousHash string, ParentHash string, Owner int, Number int, ClientID int, first int) EventMessage {
+	return EventMessage{Signature: Signature, Timestamp: Timestamp, Transaction: Transaction, PreviousHash: PreviousHash, ParentHash: ParentHash, Owner: Owner, Number: Number, ClientID: ClientID, FirstOwner: first}
 }
 
 // GobEncode - Message encoder
@@ -102,6 +108,18 @@ func (m EventMessage) GobEncodeEvent() ([]byte, error) {
 	if err != nil {
 		logger.ErrLogger.Fatal(err)
 	}
+	err = encoder.Encode(m.Number)
+	if err != nil {
+		logger.ErrLogger.Fatal(err)
+	}
+	err = encoder.Encode(m.ClientID)
+	if err != nil {
+		logger.ErrLogger.Fatal(err)
+	}
+	err = encoder.Encode(m.FirstOwner)
+	if err != nil {
+		logger.ErrLogger.Fatal(err)
+	}
 	return w.Bytes(), nil
 }
 
@@ -130,6 +148,18 @@ func (m *EventMessage) GobDecodeEvent(buf []byte) error {
 		logger.ErrLogger.Fatal(err)
 	}
 	err = decoder.Decode(&m.Owner)
+	if err != nil {
+		logger.ErrLogger.Fatal(err)
+	}
+	err = decoder.Decode(&m.Number)
+	if err != nil {
+		logger.ErrLogger.Fatal(err)
+	}
+	err = decoder.Decode(&m.ClientID)
+	if err != nil {
+		logger.ErrLogger.Fatal(err)
+	}
+	err = decoder.Decode(&m.FirstOwner)
 	if err != nil {
 		logger.ErrLogger.Fatal(err)
 	}

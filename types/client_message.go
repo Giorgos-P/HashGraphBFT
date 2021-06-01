@@ -6,21 +6,20 @@ import (
 	"encoding/gob"
 )
 
-// ClientMessage - Client message struct
-type ClientMessage struct {
-	Req *Request
-	Ack bool
+type ClientMsg struct {
+	ClientTransaction string
+	TransactionNumber int
 }
 
 // GobEncode - Client message encoder
-func (cm *ClientMessage) GobEncode() ([]byte, error) {
+func (cm *ClientMsg) GobEncodeMsg() ([]byte, error) {
 	w := new(bytes.Buffer)
 	encoder := gob.NewEncoder(w)
-	err := encoder.Encode(cm.Req)
+	err := encoder.Encode(cm.ClientTransaction)
 	if err != nil {
 		logger.ErrLogger.Fatal(err)
 	}
-	err = encoder.Encode(cm.Ack)
+	err = encoder.Encode(cm.TransactionNumber)
 	if err != nil {
 		logger.ErrLogger.Fatal(err)
 	}
@@ -28,21 +27,16 @@ func (cm *ClientMessage) GobEncode() ([]byte, error) {
 }
 
 // GobDecode - Client message decoder
-func (cm *ClientMessage) GobDecode(buf []byte) error {
+func (cm *ClientMsg) GobDecodeMsg(buf []byte) error {
 	r := bytes.NewBuffer(buf)
 	decoder := gob.NewDecoder(r)
-	err := decoder.Decode(&cm.Req)
+	err := decoder.Decode(&cm.ClientTransaction)
 	if err != nil {
 		logger.ErrLogger.Fatal(err)
 	}
-	err = decoder.Decode(&cm.Ack)
+	err = decoder.Decode(&cm.TransactionNumber)
 	if err != nil {
 		logger.ErrLogger.Fatal(err)
 	}
 	return nil
-}
-
-// Equals - Checks if client messages are equal
-func (cm *ClientMessage) Equals(cmsg *ClientMessage) bool {
-	return cm.Req.Equals(cmsg.Req) && cm.Ack == cmsg.Ack
 }

@@ -1,18 +1,19 @@
 package config
 
-type Scenario int
+var (
+	Scenario string
 
-const (
-	NORMAL Scenario = iota
-	STALE_VIEWS
-	STALE_STATES
-	BYZANTINE_PRIM
-	STALE_REQUESTS
-	NON_SS
+	scenarios = map[int]string{
+		0: "NORMAL",               // Normal execution
+		1: "IDLE",                 // Byzantine processes remain idle (send nothing)
+		2: "Sleep",                // Byzantine processes send different messages to half the servers
+		3: "TimestampChange",      // Byzantine processes send wrong bytes for BC
+		4: "SmallTimestamp",       // Byzantine processes send wrong bytes for BC
+		5: "SmallTimestampToSome", // Byzantine processes send wrong bytes for BC
+		6: "Fork",
+	}
 )
 
-var TestCase = NORMAL
-
-func InitializeScenario(scenario Scenario) {
-	TestCase = scenario
+func InitializeScenario(s int) {
+	Scenario = scenarios[s]
 }

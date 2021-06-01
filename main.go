@@ -6,21 +6,23 @@ import (
 	"HashGraphBFT/logger"
 	"HashGraphBFT/threshenc"
 
-	//	"HashGraphBFT/types"
+	//"HashGraphBFT/types"
 
 	"HashGraphBFT/variables"
 
-	"log"
 	"os"
 	"os/signal"
 	"strconv"
 )
 
 // Initializer - Method that initializes all required processes
-func initializer(id int, n int, t int, clients int, scenario config.Scenario) {
-	variables.Initialize(id, n, t, clients)
-	config.InitializeLocal()
-	config.InitializeIP()
+func initializer(id int, n int, clients int, scenario int, rem int) {
+	variables.Initialize(id, n, clients, rem)
+	if rem == 0 {
+		config.InitializeLocal()
+	} else {
+		config.InitializeIP()
+	}
 	config.InitializeScenario(scenario)
 
 	logger.InitializeLogger()
@@ -52,55 +54,38 @@ func initializer(id int, n int, t int, clients int, scenario config.Scenario) {
 }
 
 func main() {
-	done := make(chan interface{})
-
 	args := os.Args[1:]
-	if len(args) < 5 {
-		log.Fatal("Arguments should be '<id> <n> <f> <k> <scenario>")
+
+	if len(args) == 2 && string(args[0]) == "generate_keys" {
+		N, _ := strconv.Atoi(args[1])
+		threshenc.GenerateKeys(N, "./keys/")
+		return
 	}
+
+	// if len(args) < 4 {
+	// 	log.Fatal("Arguments should be '<ID> <N> <Clients> <Scenario>")
+	// }
+
+	done := make(chan interface{})
 
 	id, _ := strconv.Atoi(args[0])
 	n, _ := strconv.Atoi(args[1])
-	t, _ := strconv.Atoi(args[2])
-	clients, _ := strconv.Atoi(args[3])
-	tmp, _ := strconv.Atoi(args[4])
-	scenario := config.Scenario(tmp)
-	initializer(id, n, t, clients, scenario)
+	clients, _ := strconv.Atoi(args[2])
+	scenario, _ := strconv.Atoi(args[3])
+	rem, _ := strconv.Atoi(args[4])
 
-	// if id == 0 {
-	// 	//threshenc.GenerateKeys(n, "./keys/")
-	// 	eventMessage := new(types.EventMessage)
-	// 	eventMessage.Signature = []byte("abc")
-	// 	eventMessage.Timestamp = time.Now().UnixNano()
-	// 	eventMessage.Transaction = "0"
-	// 	eventMessage.PreviousHash = "0"
-	// 	eventMessage.ParentHash = "0"
-	// 	eventMessage.Owner = 0
+	initializer(id, n, clients, scenario, rem)
 
-	// 	fmt.Println("------------------------------")
-	// 	fmt.Println(*eventMessage)
-	// 	fmt.Println("------------------------------")
-
-	// 	app.CreateSignature(eventMessage)
-	// 	fmt.Println(*eventMessage)
-	// 	fmt.Println("------------------------------")
-
-	// 	verif := app.VerifySignature(eventMessage)
-	// 	fmt.Println(verif)
-	// 	fmt.Println("------------------------------")
-
-	// 	fmt.Println(eventMessage)
-	// 	fmt.Println("------------------------------")
-
-	// } else {
-	// 	return
-	// }
+	//os.Exit(0)
 
 	// Initialize the message transmition and handling for the servers
 	app.Subscribe()
 	go app.TransmitMessages()
 
-	go app.InitGraph()
+	//app.LoadGraph()
+
+	app.InitGraph()
+	app.StartHashGraph()
 
 	_ = <-done
 }

@@ -1,13 +1,19 @@
 package app
 
 import (
+	"HashGraphBFT/types"
 	"crypto/md5"
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/hex"
+	"fmt"
 	"hash"
 )
+
+func makeHash(ev *types.EventMessage) string {
+	return SHA384(fmt.Sprintf("%#v", ev))
+}
 
 // MD5 - md5 hash
 func MD5(text string) string {
