@@ -84,10 +84,13 @@ Adjust the script (HashgraphBFT/scripts/run.sh) and run:
 ```bash
 bash ~/go/src/HashgraphBFT/scripts/run.sh
 ```
+
+### Kill Processes
 When you are done and want to kill the processes run:
 ```bash
 bash ~/go/src/HashgraphBFT/scripts/killHash.sh
 ```
+
 ### Scenarios
 * 0 = Normal : no malicious nodes occurs
 * 1 = IDLE : malicious node do not send messages
