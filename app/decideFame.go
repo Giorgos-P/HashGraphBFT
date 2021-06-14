@@ -11,13 +11,6 @@ func DecideFame() {
 	round := 1
 	round = max(witnessChangeRound-1, 1)
 
-	//round = 1
-
-	// logger.InfoLogger.Println("MaxRoundWitness: ", maxRoundWitness)
-	// logger.InfoLogger.Println("witnessChangeRound: ", witnessChangeRound)
-	// logger.InfoLogger.Println("round: ", round)
-	// logger.InfoLogger.Println("witnessChange: ", witnessChange)
-
 	if !witnessChange {
 		return
 	}

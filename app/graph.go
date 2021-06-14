@@ -105,8 +105,6 @@ func StartHashGraph() {
 	}
 
 	owner = make([]bool, variables.N, variables.N) // all are false
-	//Simulates the client
-	//go ClientTransactionCreation()
 
 	go manageClientRequest()
 	go ManageIncomingGossip()
@@ -217,12 +215,6 @@ func showHashGraphSize() {
 		prevHashGraphSize = newHashGraphSize
 		logger.InfoLogger.Println("Size:", newHashGraphSize)
 
-		// if newHashGraphSize > 20 && newHashGraphSize < 50 {
-		// 	logger.WitnessLogger.Println("Size:", len(sortedEvents[18].EventMessage.Signature))
-		// 	logger.WitnessLogger.Println("Size:", len(sortedEvents[18].EventMessage.Signature))
-		// 	logger.WitnessLogger.Println(len(sortedEvents[18].EventMessage.PreviousHash))
-
-		// }
 		// for _, k := range sortedEvents {
 
 		// 	logger.InfoLogger.Println(k.EventMessage.Timestamp, " ", k.EventMessage.Transaction, " ", k.EventMessage.Owner, " ", k.EventMessage.Number, k.EventMessage.ClientID)
@@ -232,29 +224,6 @@ func showHashGraphSize() {
 
 		//printHashGraph()
 	}
-
-	//logger.InfoLogger.Println(sentToAllEverything())
-
-	// if newHashGraphSize == 16 {
-	// 	for _, k := range sortedEvents {
-
-	// 		logger.InfoLogger.Println(k.EventMessage.Timestamp, " ", k.EventMessage.Transaction, " ", k.EventMessage.Owner, " ", k.EventMessage.Number, k.EventMessage.ClientID)
-	// 	}
-	// 	logger.InfoLogger.Println("--------------------------------------")
-
-	// }
-
-	// for _, v := range sortedEvents {
-	// 	for _, k := range sortedEvents {
-	// 		if v.EventMessage.Transaction == k.EventMessage.Transaction && v.EventMessage.Owner == k.EventMessage.Owner && v.EventMessage.Number == k.EventMessage.Number && v.EventMessage.ClientID == k.EventMessage.ClientID {
-	// 			if v.EventMessage.Timestamp != k.EventMessage.Timestamp {
-	// 				logger.InfoLogger.Println(k.EventMessage.Timestamp, " ", v.EventMessage.Timestamp, " ", k.EventMessage.Transaction, " ", k.EventMessage.Owner)
-
-	// 			}
-	// 		}
-	// 	}
-	// }
-	//logger.InfoLogger.Println("--------------------------------------")
 
 }
 
@@ -334,40 +303,6 @@ func getMaxTimestampFromPrevEvent(v *EventNode) int64 {
 	}
 	return timestamp
 }
-
-// func timestampScenario111(v *EventNode, syncWith int) {
-// 	isFaulty := variables.ID >= variables.T && v.EventMessage.Owner == variables.ID && syncWith == 0
-
-// 	//if isFaulty && !sendfaulty {
-// 	if isFaulty && !sendfaulty {
-
-// 		var tempEventMessage types.EventMessage
-// 		var now int64 = time.Now().UnixNano()
-
-// 		maxPrev := getMaxTimestampFromPrevEvent(v)
-// 		//maxPrev := int64()
-// 		if maxPrev > 0 {
-
-// 			newTimestamp := rand.Int63n(now-maxPrev) + 2
-// 			tempEventMessage = types.NewEventMessage([]byte("0"), newTimestamp, v.EventMessage.Transaction, v.EventMessage.PreviousHash, v.EventMessage.ParentHash, v.EventMessage.Owner, v.EventMessage.Number, v.EventMessage.ClientID)
-// 		} else {
-// 			SendEvent(v.EventMessage, syncWith)
-// 			v.Know[syncWith] = true
-// 			return
-// 		}
-
-// 		eventMessage := &tempEventMessage
-// 		threshenc.CreateSignature(eventMessage)
-// 		SendEvent(eventMessage, syncWith)
-// 		numOfFaults++
-// 		if numOfFaults == totalFauts {
-// 			sendfaulty = true
-// 		}
-// 	} else {
-// 		SendEvent(v.EventMessage, syncWith)
-// 	}
-
-// }
 
 func timestampScenario1(v *EventNode, syncWith int) {
 	isFaulty := variables.ID >= variables.T && v.EventMessage.Owner == variables.ID && v.EventMessage.ParentHash == "0" && syncWith < variables.N/2
@@ -493,19 +428,6 @@ func manageClientRequest() {
 
 var countTrans int = 0
 
-func executeAlgorithms() {
-
-	//countTrans++
-
-	//if countTrans%(variables.N*10) == 0 {
-	DivideRounds()
-	DecideFame()
-	Ord()
-	//}
-	countAll()
-
-}
-
 func ManageIncomingGossip() {
 
 	//lastSync := -1
@@ -525,16 +447,10 @@ func ManageIncomingGossip() {
 				countTrans++
 
 			}
-			// else if res == 2 {
-			// 	orphan := new(OrphanType)
-			// 	orphan.Orphan = msg
-			// 	orphan.From = from
 
-			// 	orphans = append(orphans, orphan)
-			// }
 		}
 
-		for testSame2() {
+		for executeAlgorithms() {
 		}
 
 		// if len(EventChannel) == 0 {
@@ -576,39 +492,16 @@ func checkSameTransaction(ev *types.EventMessage) *EventNode {
 	return nil
 }
 
-// func check(ev *types.EventMessage) bool {
-
-// 	event := checkSameTransaction(ev)
-// 	if event != nil {
-// 		if event.EventMessage.Timestamp != ev.Timestamp {
-// 			logger.WitnessLogger.Printf("Owner:%d From:%d", ev.Owner, event.EventMessage.Owner)
-// 			return true
-// 		}
-// 	}
-// 	return false
-
-// }
-
-//false ==1
-//true ==0
-//orphan ==2
-
 func checkGossip(ev *types.EventMessage, from int) int {
-	//isFaulty := check(ev)
-
-	// logger.InfoLogger.Println("Receive from ", from)
-	// logger.InfoLogger.Println(ev.Timestamp, " ", ev.Owner, " ", ev.PreviousHash, " ", ev.ParentHash)
 
 	if ev.Timestamp > time.Now().UnixNano() {
 		//logger.WitnessLogger.Printf("After Now")
-
 		return 1
 	}
 
 	verify := threshenc.VerifySignature(ev) // verify message signature
 	if !verify {
 		//logger.WitnessLogger.Printf("Not verified")
-
 		return 1
 	}
 
@@ -644,32 +537,6 @@ func checkGossip(ev *types.EventMessage, from int) int {
 			return 1
 		}
 	}
-
-	// if previousEvent == nil || orphan {
-	// 	//orphans = append(orphans, ev)
-	// 	return 2
-	// }
-
-	// found := false
-	// for _, v := range sortedEvents {
-	// 	if v.EventMessage.Transaction == ev.Transaction && v.EventMessage.Owner == ev.Owner && v.EventMessage.Number == ev.Number && v.EventMessage.ClientID == ev.ClientID {
-	// 		logger.InfoLogger.Println("Found")
-	// 		found = true
-	// 		if v.EventMessage.Timestamp != ev.Timestamp {
-	// 			logger.InfoLogger.Println(ev.Timestamp, " ", v.EventMessage.Timestamp, " ", v.EventMessage.Transaction, " ", v.EventMessage.Owner, " ", v.EventMessage.Number, v.EventMessage.ClientID)
-	// 		} else {
-	// 			logger.InfoLogger.Println(v.EventMessage.Timestamp, " ", v.EventMessage.Transaction, " ", v.EventMessage.Owner, " ", v.EventMessage.Number, v.EventMessage.ClientID)
-	// 			logger.InfoLogger.Println("-----------------------")
-
-	// 			return false
-	// 		}
-	// 	}
-	// }
-
-	// if found {
-	// 	logger.InfoLogger.Println("-----------------------")
-
-	// }
 
 	eventNode := insertIncomingGossip(ev, previousEvent, parentEvent)
 	if previousEvent == nil {

@@ -30,13 +30,6 @@ func SortSlice(events []*EventNode) {
 	sort.Slice(events[:], func(i, j int) bool {
 		return isBefore(events[i], events[j])
 
-		// if events[i].EventMessage.Timestamp < events[j].EventMessage.Timestamp {
-		// 	return true
-		// } else if events[i].EventMessage.Timestamp == events[j].EventMessage.Timestamp {
-		// 	return events[i].EventMessage.Owner < events[j].EventMessage.Owner
-		// }
-		// return false
-
 	})
 }
 
@@ -69,11 +62,6 @@ func haveClientTransaction(transactionLetter string, transactionNumber int, clie
 func checkIfItIsANewTransaction(eventNode *EventNode) {
 
 	if haveTransaction(eventNode) {
-		// transaction := eventNode.EventMessage.Transaction
-		// if !strings.HasPrefix(transaction, "sync") {
-
-		// 	newEventNodeInMyRowSync(eventNode)
-		// }
 
 		return
 	}
@@ -259,25 +247,6 @@ func getParentEvent(ev *types.EventMessage) (*EventNode, error) {
 }
 
 var syncNum int = 0
-
-// func newEventNodeInMyRowSync(parentEvent *EventNode) *EventNode {
-
-// 	transaction := fmt.Sprintf("sync%d-%d", variables.ID, syncNum)
-// 	syncNum += 1
-// 	//transaction := fmt.Sprintf("sync")
-
-// 	ID := variables.ID
-// 	k := HashGraph[variables.ID].events
-// 	myLastElement := k[len(k)-1]
-
-// 	tempEventMessage := types.NewEventMessage([]byte("0"), time.Now().UnixNano(), transaction, myLastElement.OwnHash, parentEvent.OwnHash, ID, parentEvent.EventMessage.Number, parentEvent.EventMessage.ClientID)
-// 	eventMessage := &tempEventMessage
-// 	threshenc.CreateSignature(eventMessage)
-
-// 	eventNode := insertIncomingGossip(eventMessage, myLastElement, parentEvent)
-
-// 	return eventNode
-// }
 
 // create event in my row when i receive a new transaction i did not know
 func newEventNodeInMyRow(parentEvent *EventNode) *EventNode {

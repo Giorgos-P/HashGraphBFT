@@ -203,7 +203,7 @@ func testSame() bool {
 	return true
 }
 
-func testSame2() bool {
+func executeAlgorithms() bool {
 
 	size := HashGraphSize()
 	//next = size + 1

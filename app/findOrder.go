@@ -30,9 +30,6 @@ func maxRound() int {
 
 func Ord() {
 	maxRoundWitness := maxRound()
-	// if maxRoundWitness < 6 {
-	// 	return
-	// }
 
 	maxDesiredRound := maxRoundWitness - 3 //inclusive
 	if maxDesiredRound < 2 {
@@ -100,7 +97,7 @@ func Ord() {
 			}
 
 			if !ok {
-				fmt.Println("Empty wintess") // Normally this cant happen
+				//fmt.Println("Empty wintess") // Normally this cant happen
 				break
 			}
 			countSee := 0
@@ -181,7 +178,6 @@ func Ord() {
 
 func setRoundRec(event *EventNode, roundReceived int, key int) {
 	event.RoundReceived = roundReceived
-	//var time int64 = 0
 
 	times := make([]int64, 0)
 
@@ -190,15 +186,6 @@ func setRoundRec(event *EventNode, roundReceived int, key int) {
 			v.RoundReceived = roundReceived
 
 			if v.Round >= event.Round && v.Round < roundReceived {
-				// whoKnows := 0
-				// for _, know := range v.Know {
-				// 	if know {
-				// 		whoKnows++
-				// 	}
-				// }
-				// if whoKnows >= variables.T {
-				// 	times = append(times, v.EventMessage.Timestamp)
-				// }
 
 				visited = make([]*EventNode, 0)
 				if see(v, event, FAME) {
@@ -209,11 +196,6 @@ func setRoundRec(event *EventNode, roundReceived int, key int) {
 		}
 
 	}
-
-	//	times = append(times, event.EventMessage.Timestamp)
-
-	//time += v.EventMessage.Timestamp
-	//event.ConsensusTime = time
 
 	eventsNum := len(times)
 	median := int(math.Ceil(float64(eventsNum)/2.0) - 1) // take the midean timestamp
