@@ -10,9 +10,9 @@
 ## About
 Implementation of Hashgraph Byzantine Fault tolerance algorithm in Go programming language with ZeroMQ framework.
 
-Based on: 
-"The Hashgraph Protocol: Efficient Asynchronous BFT for High-Throughput Distributed Ledgers"
-by Leemon Baird and Atul Luykx.
+<p>Based on: <br>
+"The Hashgraph Protocol: Efficient Asynchronous BFT for High-Throughput Distributed Ledgers" <br>
+by Leemon Baird and Atul Luykx.<p>
 
 ## Installation
 ### Golang
