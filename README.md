@@ -100,6 +100,7 @@ bash ~/go/src/HashgraphBFT/scripts/killHash.sh
 
 ## References
 - [[1]The Hashgraph Protocol: Efficient Asynchronous BFT for High-Throughput Distributed Ledgers](https://hedera.com/hh-ieee_coins_paper-200516.pdf).
+- [Hashgraph Report](https://github.com/Giorgos-P/HashGraphBFT/blob/main/Thesis_Hashgraph.pdf)
 
 
 [Go To TOP](#hashgraph)
