@@ -1,4 +1,4 @@
-# HashGraph BFT
+# Hashgraph
 
    Implementation of HashGraph Byzantine Fault tolerance algorithm in Golang programming language with Zero MQ.
 
@@ -6,6 +6,7 @@
   - [About](#about)
   - [Installation](#installation)
   - [Execution](#execution)
+  - [References](#references)
 
 ## About
 Implementation of Hashgraph Byzantine Fault tolerance algorithm in Go programming language with ZeroMQ framework.
@@ -13,6 +14,31 @@ Implementation of Hashgraph Byzantine Fault tolerance algorithm in Go programmin
 <p>Based on: <br>
 "The Hashgraph Protocol: Efficient Asynchronous BFT for High-Throughput Distributed Ledgers" <br>
 by Leemon Baird and Atul Luykx.<p>
+
+## Modules
+
+[Functions](#functions)  | [Protocols](#protocols)
+------------- | -------------
+[Send Gossip](#send-gossip)  | [Divide Rounds](#)
+[Manage Client Request](#manage-client-request)  | [Decide Fame](#)
+[Manage Incoming Gossip](#manage-incoming-gossip)  | [Find Order](#)
+
+### Send Gossip
+<p> Send Gossip function implements the gossip protocol.<br>
+Chooses randomly another server and sends all the event we believe it does not know.
+</p>
+
+### Manage Client Request
+<p> It is responsible to receive the client transaction and insert it in the graph<p>
+
+### Manage Incoming Gossip
+ * Receives the gossip messages from the other servers
+ * Checks whether or not to insert the events in the graph
+ * Calls the protocols
+
+### Protocols
+The protocols are implemented based on the paper[1]
+
 
 ## Installation
 ### Golang
@@ -46,6 +72,12 @@ Open <N> different terminals and in each terminal run:
 HashgraphBFT <ID> <N> <Clients> <Scenario> <Remote>
 ```
 
+ID is the server id [0 to (N-1)]<br>
+N is the total number of servers<br>
+Clients is the total number of clients<br>
+Scenario is the scenarion number [0 to 2]<br>
+Remote is [0 or 1] 0=local execution, 1 is remote execution (we have to set the correct ip address of the remote servers in ip.go)
+
 ### Script
 Adjust the script (HashgraphBFT/scripts/run.sh) and run:
 ```bash
@@ -55,6 +87,15 @@ When you are done and want to kill the processes run:
 ```bash
 bash ~/go/src/HashgraphBFT/scripts/killHash.sh
 ```
+### Scenarios
+* 0 = Normal : no malicious nodes occurs
+* 1 = IDLE : malicious node do not send messages
+* 2 = Sleep : malicious nodes sleeo for some time and then restarts executing
+* 3 = Fork : malicious nodes send messages with arbitrary content
+
 
 ## References
-- [The Hashgraph Protocol: Efficient Asynchronous BFT for High-Throughput Distributed Ledgers](https://hedera.com/hh-ieee_coins_paper-200516.pdf).
+- [[1]The Hashgraph Protocol: Efficient Asynchronous BFT for High-Throughput Distributed Ledgers](https://hedera.com/hh-ieee_coins_paper-200516.pdf).
+
+
+[Go To TOP](#hashgraph)
