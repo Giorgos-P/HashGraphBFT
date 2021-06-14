@@ -4,6 +4,7 @@
 
 ## Contents
   - [About](#about)
+  - [Modules](#modules)
   - [Installation](#installation)
   - [Execution](#execution)
   - [References](#references)
@@ -29,7 +30,7 @@ Chooses randomly another server and sends all the event we believe it does not k
 </p>
 
 ### Manage Client Request
-<p> It is responsible to receive the client transaction and insert it in the graph<p>
+<p> It is responsible to receive the client transaction and insert it in the graph.<p>
 
 ### Manage Incoming Gossip
  * Receives the gossip messages from the other servers
@@ -72,11 +73,11 @@ Open <N> different terminals and in each terminal run:
 HashgraphBFT <ID> <N> <Clients> <Scenario> <Remote>
 ```
 
-ID is the server id [0 to (N-1)]<br>
-N is the total number of servers<br>
-Clients is the total number of clients<br>
-Scenario is the scenarion number [0 to 2]<br>
-Remote is [0 or 1] 0=local execution, 1 is remote execution (we have to set the correct ip address of the remote servers in ip.go)
+ID : is the server id [0 to (N-1)]<br>
+N : is the total number of servers<br>
+Clients : is the total number of clients<br>
+Scenario : is the scenarion number [0 to 2]<br>
+Remote : is [0 or 1] 0=local execution, 1 is remote execution (we have to set the correct ip address of the remote servers in ip.go)
 
 ### Script
 Adjust the script (HashgraphBFT/scripts/run.sh) and run:
